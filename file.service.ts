@@ -75,12 +75,17 @@ export class FileService {
     }
 
     async deleteFile(fileName: string, subDir?: string, directory: Directory = Directory.Documents) {
-         const path = subDir ? `${subDir}/${fileName}` : fileName;
-
-        return Filesystem.deleteFile({
-            path,
-            directory: directory,
-        });
+        const path = subDir ? `${subDir}/${fileName}` : fileName;
+        try {
+           return Filesystem.deleteFile({
+                path,
+                directory: directory,
+            }); 
+        }
+        catch{
+            return Promise.resolve();
+        }
+        
     }
 
     async listFiles(path: string, directory: Directory = Directory.Documents) {
