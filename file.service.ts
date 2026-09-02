@@ -1,7 +1,7 @@
 import { Injectable, signal } from '@angular/core';
 import { Photo } from '@capacitor/camera';
 import { Capacitor } from '@capacitor/core';
-import { Filesystem, Directory, WriteFileResult, Encoding } from '@capacitor/filesystem';
+import { Filesystem, Directory, WriteFileResult, Encoding, FileInfo } from '@capacitor/filesystem';
 
 @Injectable({
     providedIn: 'root',
@@ -10,8 +10,16 @@ export class FileService {
 
     documentsUri = signal<string>("");
 
-    getAbsolutePath(uri: string, path: string): string {
+    getPathUri(uri: string, path: string): string {
         return `${uri}${path}`;
+    }
+
+    getAbsolutePath(uri: string): string {
+        return uri.replace("file://", "");
+    }
+
+    getUrlWeb(uri: string){                  
+        return Capacitor.convertFileSrc(uri);
     }
 
     getExtension(source: File | string): string {
@@ -20,17 +28,23 @@ export class FileService {
         return `.${ source instanceof File ? source.type.substring(index + 1) : source.substring(index + 1)}`
     }
 
-    getSrcWeb(uri: string){
-        return Capacitor.convertFileSrc(uri);
+    async getFolderWeight(path: string){
+        const dir = await Filesystem.readdir({path: path, directory: Directory.Documents});
+        let weight = 0;
+
+        dir.files.map((fileInfo: FileInfo) => weight += fileInfo.size );
+
+        return (weight / 1024 / 1024 / 1024).toFixed(3);
     }
 
     async getDocumentsUri(path: string): Promise<string>{
         let directory = Directory.Documents,
             uri = await Filesystem.getUri({path, directory});
-
-        this.documentsUri.set(uri.uri);
-
         return uri.uri;
+    }
+
+    async loadDocumentsUri(path: string): Promise<void>{
+        this.documentsUri.set(await this.getDocumentsUri(path));
     }
 
     getFileName(source: File | Photo){
@@ -46,6 +60,13 @@ export class FileService {
         return `${Date.now()}${extension}`
     } 
 
+    async getFiles(path: string, directory: Directory = Directory.Documents) {
+        return Filesystem.readdir({
+            path,
+            directory: directory,
+        });
+    } 
+
     async saveFile(file: File, fileName: string, subDir?: string, directory: Directory = Directory.Documents): Promise<WriteFileResult> {
         const base64 = await this.fileToBase64(file);
 
@@ -54,16 +75,13 @@ export class FileService {
 
     async writeFile(data: string, fileName: string, subDir?: string, directory: Directory = Directory.Documents, encoding?: Encoding): Promise<WriteFileResult> {
         const path = subDir ? `${subDir}/${fileName}` : fileName;
-
-        if (subDir) {
-            await this.createDir(subDir, directory);
-        }
-
+  
         return await Filesystem.writeFile({
             path,
             data,
             directory,
             encoding,
+            recursive: true
         });
     }
 
@@ -84,26 +102,17 @@ export class FileService {
         }
         catch{
             return Promise.resolve();
-        }
-        
+        }      
     }
-
-    async listFiles(path: string, directory: Directory = Directory.Documents) {
-        return Filesystem.readdir({
-            path,
-            directory: directory,
-        });
-    } 
 
     async createDir(path: string, directory: Directory = Directory.Documents) {
         try {
             await Filesystem.mkdir({
                 path,
                 directory,
-                recursive: true,
+                recursive: false,
             });
         } catch (e) {
-            // Le dossier existe déjà
         }
     }
 
