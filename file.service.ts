@@ -144,4 +144,37 @@ export class FileService {
         }
         return status.publicStorage === 'granted';
     }
+
+    async chunkLargeFile(path: string, file: File): Promise<void>{
+        const limit = 5; // taille d'une tranche, en Mo
+        const blobBase =  file as Blob; // File hérite de Blob, ce qui donne accès à slice()
+        const chunkOctet = limit * 1024 * 1024; // la même taille, convertie en octets
+
+        // On recopie par tranches plutôt qu'en une fois : lire tout le zip d'un coup
+        // saturerait la mémoire de la WebView et l'app se fermerait sans message d'erreur.
+        // Ici une seule tranche est en mémoire à la fois, quelle que soit la taille du zip.
+        let startedOctet = 0;
+        let endedOctet = chunkOctet;
+
+        do{
+            // slice ne lit rien : il crée seulement une référence sur une portion du zip
+            let bufferBlob = blobBase.slice(startedOctet, endedOctet);
+
+            // Le pont entre le JS et le natif ne transporte que du texte, jamais de binaire.
+            // Les octets de la tranche doivent donc être encodés en base64 avant l'envoi,
+            // ce que le FileReader fait nativement, sans saturer la mémoire.
+            const data = await (new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result as string);
+                reader.onerror = reject;
+                reader.readAsDataURL(bufferBlob);
+            }));
+
+            // Le natif décode le base64 et ajoute les octets à la suite du fichier
+            await Filesystem.appendFile({path: path, data: data as string, directory: Directory.Documents});
+
+            startedOctet = endedOctet; // slice exclut sa borne de fin, la tranche suivante démarre donc dessus
+            endedOctet = startedOctet + chunkOctet > blobBase.size ? blobBase.size : startedOctet + chunkOctet; // la dernière tranche s'arrête à la fin du zip
+        } while(startedOctet < blobBase.size)
+    }
 }
